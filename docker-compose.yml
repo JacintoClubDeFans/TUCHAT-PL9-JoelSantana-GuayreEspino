@@ -1,31 +1,7 @@
 services:
-  mysql:
-    image: mysql:8.0
-    container_name: tuchat-mysql
-    restart: unless-stopped
-    environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: tuchat
-      MYSQL_USER: tuchat_user
-      MYSQL_PASSWORD: tuchat_pass
-    ports:
-      - "3307:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-
   redis:
     image: redis:7-alpine
     container_name: tuchat-redis
     restart: unless-stopped
     ports:
       - "6379:6379"
-
-  adminer:
-    image: adminer
-    container_name: tuchat-adminer
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-
-volumes:
-  mysql_data:

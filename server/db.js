@@ -1,18 +1,26 @@
-const mysql = require("mysql2/promise");
+const { Pool } = require("pg");
 
 let pool = null;
 
 function getPool() {
   if (!pool) {
-    pool = mysql.createPool({
-      host: process.env.MYSQL_HOST || "127.0.0.1",
-      port: Number(process.env.MYSQL_PORT || 3306),
-      user: process.env.MYSQL_USER,
-      password: process.env.MYSQL_PASSWORD,
-      database: process.env.MYSQL_DATABASE,
-      waitForConnections: true,
-      connectionLimit: 10,
-      queueLimit: 0,
+    // Opción 1: URL completa (recomendado)
+    if (process.env.DATABASE_URL) {
+      pool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+        ssl: { rejectUnauthorized: false }, // Supabase suele requerir SSL
+      });
+      return pool;
+    }
+
+    // Opción 2: variables sueltas
+    pool = new Pool({
+      host: process.env.PGHOST,
+      port: Number(process.env.PGPORT || 5432),
+      user: process.env.PGUSER,
+      password: process.env.PGPASSWORD,
+      database: process.env.PGDATABASE,
+      ssl: { rejectUnauthorized: false },
     });
   }
   return pool;
