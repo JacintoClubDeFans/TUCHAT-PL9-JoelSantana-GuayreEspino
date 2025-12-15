@@ -15,15 +15,16 @@ app.get("/health", (req, res) => {
   res.json({ ok: true, name: "tuchat-server" });
 });
 
-app.get("/health/mysql", async (req, res) => {
+app.get("/health/db", async (req, res) => {
   try {
     const pool = getPool();
-    const [rows] = await pool.query("SELECT 1 AS ok");
-    res.json({ ok: true, mysql: rows[0] });
+    const result = await pool.query("SELECT 1 AS ok");
+    res.json({ ok: true, db: result.rows[0] });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
 });
+
 
 app.get("/health/redis", async (req, res) => {
   try {
