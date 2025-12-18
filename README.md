@@ -7,6 +7,8 @@ Monorepo con:
 - Backend: Node.js (Express) + Socket.IO
 - Infra local: Redis (Docker)
 - BD relacional (cloud): Supabase (PostgreSQL)
+- Deploy (Web): Vercel
+- Estilos (CSS): Tailwind
 
 ## Estructura del proyecto
 - `tuchat/`  -> App (Expo)
