@@ -2,7 +2,7 @@ import { appDb, gobDb } from "../db/db.js";
 import crypto from "crypto";
 
 /**
- * Obtiene los chats basados en las asignaturas matriculadas
+ * Obtiene los chats disponibles (CLASES) evitando duplicados
  */
 export const getChatsDisponibles = async (req, res) => {
     const { id_usuario_app, tipo_externo } = req.currentUser;
@@ -12,11 +12,16 @@ export const getChatsDisponibles = async (req, res) => {
             ? 'cache_academico.v_asignaturas_visibles_chat_alumno' 
             : 'cache_academico.v_asignaturas_visibles_chat_profesor';
 
+        // Cambiamos DISTINCT ON a id_asignatura para que salgan todos los chats
         const { rows } = await appDb.query(
-            `SELECT id_asignatura, nombre_asignatura as nombre, nombre_clase as clase 
+            `SELECT DISTINCT ON (id_asignatura)
+                id_asignatura as id_chat, 
+                nombre_asignatura as nombre,
+                nombre_clase as subtitulo,
+                false as "esProfesor"
              FROM ${vista} 
              WHERE id_usuario_app = $1 
-             ORDER BY nombre_asignatura ASC`, 
+             ORDER BY id_asignatura ASC`, 
             [id_usuario_app]
         );
 
@@ -29,7 +34,7 @@ export const getChatsDisponibles = async (req, res) => {
 };
 
 /**
- * Fuerza la sincronización de datos desde la DB externa a la local
+ * Sincronización completa con la DB del Gobierno
  */
 export const forzarSync = async (req, res) => {
     const { id_usuario_app, dni, tipo_externo } = req.currentUser;
@@ -50,9 +55,11 @@ export const forzarSync = async (req, res) => {
                 [dni]
             );
 
-            console.log(`[Sync] Procesando ${extData.length} registros para el usuario local: ${id_usuario_app}`);
+            if (extData.length === 0) return res.json({ ok: true, msg: "Sin datos" });
 
-            // Limpieza de seguridad para evitar duplicados
+            await appDb.query("BEGIN");
+
+            // Limpiar datos viejos del usuario
             await appDb.query(`
                 DELETE FROM cache_academico.matriculas_asignaturas 
                 WHERE id_matricula IN (SELECT id_matricula FROM cache_academico.matriculas WHERE id_usuario_app = $1)`, 
@@ -60,43 +67,58 @@ export const forzarSync = async (req, res) => {
             );
             await appDb.query("DELETE FROM cache_academico.matriculas WHERE id_usuario_app = $1", [id_usuario_app]);
 
-            const matriculasExistentes = {};
+            const matriculasProcesadas = {};
 
             for (const d of extData) {
-                // Sincronizar Asignaturas
-                await appDb.query(`INSERT INTO cache_academico.asignaturas (id_asignatura, codigo, nombre) VALUES ($1, $2, $3) ON CONFLICT (id_asignatura) DO NOTHING`, [d.id_asignatura, d.codigo_asig, d.nombre_asig]);
-                // Sincronizar Ofertas
+                // Sincronizar catálogos
+                await appDb.query(`INSERT INTO cache_academico.asignaturas (id_asignatura, codigo, nombre) VALUES ($1, $2, $3) ON CONFLICT (id_asignatura) DO UPDATE SET nombre = EXCLUDED.nombre`, [d.id_asignatura, d.codigo_asig, d.nombre_asig]);
+                await appDb.query(`INSERT INTO cache_academico.clases (id_clase, id_plan, curso, grupo, nombre) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id_clase) DO UPDATE SET nombre = EXCLUDED.nombre`, [d.id_clase, d.id_plan, d.curso, d.grupo, d.nombre_clase]);
                 await appDb.query(`INSERT INTO cache_academico.oferta_asignaturas (id_oferta, id_plan, id_asignatura, curso) VALUES ($1, $2, $3, $4) ON CONFLICT (id_oferta) DO NOTHING`, [d.id_oferta, d.id_plan, d.id_asignatura, d.curso]);
-                // Sincronizar Clases
-                await appDb.query(`INSERT INTO cache_academico.clases (id_clase, id_plan, curso, grupo, nombre) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id_clase) DO NOTHING`, [d.id_clase, d.id_plan, d.curso, d.grupo, d.nombre_clase]);
 
-                let currentIdMat;
-                if (!matriculasExistentes[d.id_clase]) {
-                    currentIdMat = crypto.randomUUID();
+                let idMat;
+                if (!matriculasProcesadas[d.id_clase]) {
+                    idMat = crypto.randomUUID();
                     await appDb.query(
                         `INSERT INTO cache_academico.matriculas (id_matricula, id_usuario_app, id_clase, id_alumno_externo)
-                         VALUES ($1, $2, $3, $4) ON CONFLICT (id_usuario_app, id_clase) DO UPDATE SET id_alumno_externo = EXCLUDED.id_alumno_externo`,
-                        [currentIdMat, id_usuario_app, d.id_clase, d.id_usuario_externo]
+                         VALUES ($1, $2, $3, $4)`,
+                        [idMat, id_usuario_app, d.id_clase, d.id_usuario_externo]
                     );
-                    matriculasExistentes[d.id_clase] = currentIdMat;
+                    matriculasProcesadas[d.id_clase] = idMat;
                 } else {
-                    currentIdMat = matriculasExistentes[d.id_clase];
+                    idMat = matriculasProcesadas[d.id_clase];
                 }
 
                 await appDb.query(
                     `INSERT INTO cache_academico.matriculas_asignaturas (id_matricula, id_oferta, estado)
                      VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-                    [currentIdMat, d.id_oferta, d.estado]
+                    [idMat, d.id_oferta, d.estado]
                 );
             }
+            await appDb.query("COMMIT");
         }
-
-        return res.json({ ok: true, msg: "Sincronización completada con éxito" });
-
+        return res.json({ ok: true, msg: "Sincronización OK" });
     } catch (error) {
-        console.error("Error crítico en forzarSync:", error);
-        return res.status(500).json({ ok: false, msg: "Error interno en el servidor de sincronización" });
+        await appDb.query("ROLLBACK");
+        console.error("Error Sync:", error);
+        return res.status(500).json({ ok: false, msg: "Error" });
     }
 };
 
-// NO añadas export default al final, las exportaciones nombradas arriba son suficientes
+export const getMiembrosClase = async (req, res) => {
+    const { id } = req.params;
+
+    if (!id || id === 'undefined') {
+        return res.status(400).json({ ok: false, msg: "ID de clase no válido" });
+    }
+
+    try {
+        const { rows } = await appDb.query(
+            `SELECT id_usuario_app FROM cache_academico.v_miembros_clase WHERE id_asignatura = $1`,
+            [id]
+        );
+        return res.json({ ok: true, ids: rows.map(r => r.id_usuario_app) });
+    } catch (error) {
+        console.error("Error en getMiembrosClase:", error);
+        return res.status(500).json({ ok: false, msg: "Error interno" });
+    }
+};

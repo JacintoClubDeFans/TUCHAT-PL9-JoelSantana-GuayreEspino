@@ -20,7 +20,7 @@ import * as SecureStore from "expo-secure-store";
 import { styles } from "./Login.styles";
 import { useNavigation } from '@react-navigation/native';
 
-const API_URL = "http://192.168.56.1:4000";
+const API_URL = "http://172.20.200.18:4000";
 
 // Iconos SVG
 const UserIcon = ({ focused }: { focused: boolean }) => (

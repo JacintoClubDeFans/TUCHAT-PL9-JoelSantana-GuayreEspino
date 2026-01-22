@@ -38,7 +38,7 @@ export const loginConCredenciales = async ({ identificador, password }) => {
     const saltDB = extUser.salt?.trim() || "";
     const hashDB = extUser.password_sha256_hex?.trim() || "";
     // IMPORTANTE: El orden debe coincidir con como lo guardaste (salt + password)
-    const hashCalculado = sha256(saltDB + password);
+    const hashCalculado = sha256(saltDB+ password);
 
     if (hashCalculado !== hashDB) {
         console.log("[Auth] Password incorrecto");

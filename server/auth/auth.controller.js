@@ -42,7 +42,7 @@ export const login = async (req, res) => {
     });
 
   } catch (err) {
-    console.error("[Login Error]:", err.message);
+    console.error("[Login Error]:", err);
 
     // 4. Manejo de errores específicos
     
